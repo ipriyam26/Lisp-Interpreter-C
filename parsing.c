@@ -42,7 +42,7 @@ typedef struct
     int error;
 } lval;
 
-lval lval_num(int x)
+lval lval_err(int x)
 {
     lval a;
     a.type = LVAL_ERR;
@@ -95,42 +95,58 @@ void lval_println(lval v)
     putchar('\n');
 }
 
-long eval_op(long x, char *op, long y)
+lval eval_op(lval x, char *op, lval y)
+
 {
+    if (x.type == LVAL_ERR)
+    {
+        return x;
+    }
+    if (y.type == LVAL_ERR)
+    {
+        return y;
+    }
     if (strcmp(op, "+") == 0)
     {
-        return x + y;
+        return lval_num(
+
+            x.num + y.num);
     }
     if (strcmp(op, "-") == 0)
     {
-        return x - y;
+        return lval_num(
+            x.num - y.num);
     }
     if (strcmp(op, "*") == 0)
     {
-        return x * y;
+        return lval_num(x.num * y.num);
     }
     if (strcmp(op, "/") == 0)
     {
-        return x / y;
+        /* If second operand is zero return error */
+        return y.num == 0
+                   ? lval_err(LERR_DIV_ZERO)
+                   : lval_num(x.num / y.num);
     }
-    printf("Found thi");
-    return 0;
+    return lval_err(LERR_BAD_OP);
 }
 
-long eval(mpc_ast_t *tree)
+lval eval(mpc_ast_t *tree)
 {
     // If it was a number
 
     if (strstr(tree->tag, "number"))
     {
-        return atoi(tree->contents);
+        errno = 0;
+        long x = strtol(tree->contents, NULL, 10);
+        return errno != ERANGE ? lval_num(x) : lval_err(LERR_BAD_NUM);
     }
 
     // If not then it means its an operator
 
     char *op = tree->children[1]->contents;
 
-    long x = eval(tree->children[2]);
+    lval x = eval(tree->children[2]);
 
     int i = 3; // . first 2 have already been ignored
 
@@ -172,8 +188,9 @@ int main(int argc, char **argv)
         char *input = readline("lispy> ");
         if (mpc_parse("<stdin>", input, Lispy, &r))
         {
-            long result = eval(r.output);
-            printf("%li\n", result);
+            lval result = eval(r.output);
+            lval_println(result);
+            // printf("%li\n", result);
             mpc_ast_delete(r.output);
         }
         else
