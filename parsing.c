@@ -23,6 +23,41 @@ void add_history(char *unused) {}
 #endif
 
 static char input[2048];
+enum
+{
+    LVAL_NUM,
+    LVAL_ERR
+};
+enum
+{
+    LERR_DIV_ZERO,
+    LERR_BAD_OP,
+    LERR_BAD_NUM
+};
+
+typedef struct
+{
+    int type;
+    long num;
+    int error;
+} lval;
+
+lval lval_num(int x)
+{
+    lval a;
+    a.type = LVAL_ERR;
+    a.error = x;
+    return a;
+}
+
+lval lval_num(long num)
+{
+
+    lval a;
+    a.type = LVAL_NUM;
+    a.num = num;
+    return a;
+}
 
 long eval_op(long x, char *op, long y)
 {
