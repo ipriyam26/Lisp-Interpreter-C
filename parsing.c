@@ -27,7 +27,6 @@ static char input[2048];
 enum { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_SEXPR };
 
 enum { LERR_DIV_ZERO, LERR_BAD_OP, LERR_BAD_NUM };
-
 typedef struct lval {
     int type;
     long num;
@@ -226,6 +225,77 @@ lval *lval_eval(lval *v) {
     return v;
 }
 
+lval *lval_pop(lval *v, int i) {
+    lval *x = v->cell[i];
+
+    memmove(x->cell[i], x->cell[i + 1], sizeof(lval *) * v->count - i - 1);
+    v->count--;
+    v->cell = realloc(v->cell, sizeof(lval *) * v->count);
+    return x;
+}
+
+lval *lval_pop(lval *v, int i) {
+    // NOTE - Using the second lval_pop without '&' in memmove will result in a
+    // segmentation fault or undefined behavior as it is trying to move a
+    // pointer without referencing the address of the pointer. The '&' operator
+    // is needed to pass the address of the pointer to the memmove function.
+
+    lval *x = v->cell[i];
+
+    memmove(&x->cell[i], &x->cell[i + 1], sizeof(lval *) * v->count - i - 1);
+    v->count--;
+    v->cell = realloc(v->cell, sizeof(lval *) * v->count);
+    return x;
+}
+
+lval *lval_take(lval *v, int i) {
+    lval *x = lval_pop(v, i);
+    lval_del(v);
+    return x;
+}
+
+lval *builtin_op(lval *a, char *op) {
+    for (int i = 0; i < a->count; i++) {
+        if (a->cell[i]->type != LVAL_NUM) {
+            lval_del(a);
+            return lval_err("Cannot operate on non-number!");
+        }
+    }
+
+    lval *x = lval_pop(a, 0);
+
+    if ((strcmp(op, "-") == 0) && a->count == 0) {
+        x->num = -x->num;
+    }
+
+    while (a->count > 0) {
+        /* Pop the next element */
+        lval *y = lval_pop(a, 0);
+
+        if (strcmp(op, "+") == 0) {
+            x->num += y->num;
+        }
+        if (strcmp(op, "-") == 0) {
+            x->num -= y->num;
+        }
+        if (strcmp(op, "*") == 0) {
+            x->num *= y->num;
+        }
+        if (strcmp(op, "/") == 0) {
+            if (y->num == 0) {
+                lval_del(x);
+                lval_del(y);
+                x = lval_err("Division By Zero!");
+                break;
+            }
+            x->num /= y->num;
+        }
+
+        lval_del(y);
+    }
+    lval_del(a);
+    return x;
+}
 // lval eval_op(lval x, char *op, lval y)
 // {
 //     if (x.type == LVAL_ERR)
