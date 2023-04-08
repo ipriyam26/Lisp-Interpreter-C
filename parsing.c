@@ -23,11 +23,15 @@ void add_history(char *unused) {}
 #endif
 
 static char input[2048];
+
 enum
 {
+    LVAL_ERR,
     LVAL_NUM,
-    LVAL_ERR
+    LVAL_SYM,
+    LVAL_SEXPR
 };
+
 enum
 {
     LERR_DIV_ZERO,
@@ -39,7 +43,14 @@ typedef struct
 {
     int type;
     long num;
-    int error;
+
+    // Error and Symbol have string data
+    char *error;
+    char *sym;
+
+    // Count of pointers and a list of pointers to lval
+    int count;
+    struct lval **cell; // This is the pointer to the cell that holds the pointers i.e it points to the list of pointers that are pointing to the lval struct
 } lval;
 
 lval lval_err(int x)
@@ -206,7 +217,7 @@ int main(int argc, char **argv)
         add_history(input);
         free(input);
     }
-    mpc_cleanup(4, Number, Symbol, Sexpr, Expr, Lispy);
+    mpc_cleanup(5, Number, Symbol, Sexpr, Expr, Lispy);
 
     return 0;
 }
