@@ -39,7 +39,7 @@ enum
     LERR_BAD_NUM
 };
 
-typedef struct
+typedef struct lval
 {
     int type;
     long num;
@@ -53,61 +53,170 @@ typedef struct
     struct lval **cell; // This is the pointer to the cell that holds the pointers i.e it points to the list of pointers that are pointing to the lval struct
 } lval;
 
-lval lval_err(int x)
+void lval_print(lval* v);
+lval *lval_err(char *m)
 {
-    lval a;
-    a.type = LVAL_ERR;
-    a.error = x;
+    lval *a = malloc(sizeof(lval));
+    a->type = LVAL_ERR;
+    a->error = malloc(strlen(m) + 1);
+    strcpy(a->error, m);
     return a;
 }
 
-lval lval_num(long num)
+lval *lval_num(long num)
 {
 
-    lval a;
-    a.type = LVAL_NUM;
-    a.num = num;
+    lval *a = malloc(sizeof(lval));
+    a->type = LVAL_NUM;
+    a->num = num;
     return a;
 }
 
-void lval_print(lval v)
+lval *lval_sym(char *s)
 {
-    switch (v.type)
+    lval *a = malloc(sizeof(lval));
+    a->type = LVAL_SYM;
+    a->error = malloc(strlen(s) + 1);
+    strcpy(a->sym, s);
+    return a;
+}
+
+lval *lval_sexpr(void)
+{
+    lval *v = malloc(sizeof(lval));
+    v->type = LVAL_SEXPR;
+    v->count = 0;
+    v->cell = NULL;
+    return v;
+}
+
+void lval_del(lval *v)
+{
+    switch (v->type)
+    {
+    case LVAL_NUM:
+        break;
+    case LVAL_ERR:
+        free(v->error);
+        break;
+    case LVAL_SYM:
+        free(v->sym);
+        break;
+
+    case LVAL_SEXPR:
+        for (int i = 0; i < v->count; i++)
+        {
+            lval_del(v->cell[i]);
+        }
+        free(v->cell);
+        break;
+    }
+    free(v);
+}
+
+lval *lval_add(lval *v, lval *x)
+{
+    v->count++;
+    v->cell = realloc(v->cell, sizeof(lval *) * v->count);
+    v->cell[v->count - 1] = x;
+    return v;
+}
+
+void lval_print(lval *v)
+{
+    switch (v->type)
     {
     /* In the case the type is a number print it */
     /* Then 'break' out of the switch. */
     case LVAL_NUM:
-        printf("%li", v.num);
+        printf("%li", v->num);
         break;
 
-    /* In the case the type is an error */
     case LVAL_ERR:
-        /* Check what type of error it is and print it */
-        if (v.error == LERR_DIV_ZERO)
-        {
-            printf("Error: Division By Zero!");
-        }
-        if (v.error == LERR_BAD_OP)
-        {
-            printf("Error: Invalid Operator!");
-        }
-        if (v.error == LERR_BAD_NUM)
-        {
-            printf("Error: Invalid Number!");
-        }
+        printf("Error: %s", v->error);
+        break;
+    case LVAL_SYM:
+        printf("%s", v->sym);
+        break;
+    case LVAL_SEXPR:
+        lval_expr_print(v, "(", ")");
         break;
     }
 }
 
 /* Print an "lval" followed by a newline */
-void lval_println(lval v)
+void lval_println(lval *v)
+
 {
     lval_print(v);
     putchar('\n');
 }
 
-lval eval_op(lval x, char *op, lval y)
+lval *lval_read_num(mpc_ast_t *t)
+{
+    errno = 0;
+    long x = strtol(t->contents, NULL, 10);
+    return errno != ERANGE ? lval_num(x) : lval_err("invalid number");
+}
 
+lval *lval_read(mpc_ast_t *t)
+{
+    if (strstr(t->tag, "number"))
+    {
+        return lval_read_num(t);
+    }
+    if (strstr(t->tag, "symbol"))
+    {
+        return lval_sym(t->contents);
+    }
+
+    lval *x = NULL;
+    if (strcmp(t->tag, ">") == 0)
+    {
+        x = lval_sexpr();
+    }
+    if (strstr(t->tag, "sexpr"))
+    {
+        x = lval_sexpr();
+    }
+
+    for (int i = 0; i < t->children_num; i++)
+    {
+        if (strcmp(t->children[i]->contents, "(") == 0)
+        {
+            continue;
+        }
+        if (strcmp(t->children[i]->contents, ")") == 0)
+        {
+            continue;
+        }
+        if (strcmp(t->children[i]->tag, "regex") == 0)
+        {
+            continue;
+        }
+        x = lval_add(x, lval_read(t->children[i]));
+    }
+
+    return x;
+}
+
+void lval_expr_print(lval *v, char open, char close)
+{
+    putchar(open);
+
+    for (int i = 0; i < v->count; i++)
+    {
+        lval_print(v->cell[i]);
+
+        if (i != (v->count - 1))
+        {
+            putchar(' ');
+        }
+    }
+    putchar(close);
+}
+
+lval eval_op(lval x, char *op, lval y)
 {
     if (x.type == LVAL_ERR)
     {
@@ -201,10 +310,14 @@ int main(int argc, char **argv)
         char *input = readline("lispy> ");
         if (mpc_parse("<stdin>", input, Lispy, &r))
         {
-            lval result = eval(r.output);
-            lval_println(result);
-            // printf("%li\n", result);
-            mpc_ast_delete(r.output);
+
+            lval* x = lval_read(r.output);
+            lval_println(x);
+            lval_del(x);
+            // lval result = eval(r.output);
+            // lval_println(result);
+            // // printf("%li\n", result);
+            // mpc_ast_delete(r.output);
         }
         else
         {
