@@ -76,7 +76,7 @@ lval *lval_sym(char *s)
 {
     lval *a = malloc(sizeof(lval));
     a->type = LVAL_SYM;
-    a->error = malloc(strlen(s) + 1);
+    a->sym = malloc(strlen(s) + 1);
     strcpy(a->sym, s);
     return a;
 }
@@ -122,6 +122,22 @@ lval *lval_add(lval *v, lval *x)
     return v;
 }
 
+void lval_expr_print(lval *v, char open, char close)
+{
+    putchar(open);
+
+    for (int i = 0; i < v->count; i++)
+    {
+        lval_print(v->cell[i]);
+
+        if (i != (v->count - 1))
+        {
+            putchar(' ');
+        }
+    }
+    putchar(close);
+}
+
 void lval_print(lval *v)
 {
     switch (v->type)
@@ -139,7 +155,7 @@ void lval_print(lval *v)
         printf("%s", v->sym);
         break;
     case LVAL_SEXPR:
-        lval_expr_print(v, "(", ")");
+        lval_expr_print(v, '(', ')');
         break;
     }
 }
@@ -200,84 +216,70 @@ lval *lval_read(mpc_ast_t *t)
     return x;
 }
 
-void lval_expr_print(lval *v, char open, char close)
-{
-    putchar(open);
 
-    for (int i = 0; i < v->count; i++)
-    {
-        lval_print(v->cell[i]);
 
-        if (i != (v->count - 1))
-        {
-            putchar(' ');
-        }
-    }
-    putchar(close);
-}
+// lval eval_op(lval x, char *op, lval y)
+// {
+//     if (x.type == LVAL_ERR)
+//     {
+//         return x;
+//     }
+//     if (y.type == LVAL_ERR)
+//     {
+//         return y;
+//     }
+//     if (strcmp(op, "+") == 0)
+//     {
+//         return lval_num(
 
-lval eval_op(lval x, char *op, lval y)
-{
-    if (x.type == LVAL_ERR)
-    {
-        return x;
-    }
-    if (y.type == LVAL_ERR)
-    {
-        return y;
-    }
-    if (strcmp(op, "+") == 0)
-    {
-        return lval_num(
+//             x.num + y.num);
+//     }
+//     if (strcmp(op, "-") == 0)
+//     {
+//         return lval_num(
+//             x.num - y.num);
+//     }
+//     if (strcmp(op, "*") == 0)
+//     {
+//         return lval_num(x.num * y.num);
+//     }
+//     if (strcmp(op, "/") == 0)
+//     {
+//         /* If second operand is zero return error */
+//         return y.num == 0
+//                    ? lval_err(LERR_DIV_ZERO)
+//                    : lval_num(x.num / y.num);
+//     }
+//     return lval_err(LERR_BAD_OP);
+// }
 
-            x.num + y.num);
-    }
-    if (strcmp(op, "-") == 0)
-    {
-        return lval_num(
-            x.num - y.num);
-    }
-    if (strcmp(op, "*") == 0)
-    {
-        return lval_num(x.num * y.num);
-    }
-    if (strcmp(op, "/") == 0)
-    {
-        /* If second operand is zero return error */
-        return y.num == 0
-                   ? lval_err(LERR_DIV_ZERO)
-                   : lval_num(x.num / y.num);
-    }
-    return lval_err(LERR_BAD_OP);
-}
+// lval eval(mpc_ast_t *tree)
+// {
+//     // If it was a number
 
-lval eval(mpc_ast_t *tree)
-{
-    // If it was a number
+//     if (strstr(tree->tag, "number"))
+//     {
+//         errno = 0;
+//         long x = strtol(tree->contents, NULL, 10);
+//         return errno != ERANGE ? lval_num(x) : lval_err(LERR_BAD_NUM);
+//     }
 
-    if (strstr(tree->tag, "number"))
-    {
-        errno = 0;
-        long x = strtol(tree->contents, NULL, 10);
-        return errno != ERANGE ? lval_num(x) : lval_err(LERR_BAD_NUM);
-    }
+//     // If not then it means its an operator
 
-    // If not then it means its an operator
+//     char *op = tree->children[1]->contents;
 
-    char *op = tree->children[1]->contents;
+//     lval x = eval(tree->children[2]);
 
-    lval x = eval(tree->children[2]);
+//     int i = 3; // . first 2 have already been ignored
 
-    int i = 3; // . first 2 have already been ignored
+//     while (strstr(tree->children[i]->tag, "expr"))
+//     {
 
-    while (strstr(tree->children[i]->tag, "expr"))
-    {
-
-        x = eval_op(x, op, eval(tree->children[i]));
-        i++;
-    }
-    return x;
-}
+//         x = eval_op(x, op, eval(tree->children[i]));
+//         i++;
+//     }
+//     return x;
+// }
 
 int main(int argc, char **argv)
 {
