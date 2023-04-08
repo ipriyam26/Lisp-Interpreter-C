@@ -53,7 +53,7 @@ typedef struct lval
     struct lval **cell; // This is the pointer to the cell that holds the pointers i.e it points to the list of pointers that are pointing to the lval struct
 } lval;
 
-void lval_print(lval* v);
+void lval_print(lval *v);
 lval *lval_err(char *m)
 {
     lval *a = malloc(sizeof(lval));
@@ -216,6 +216,46 @@ lval *lval_read(mpc_ast_t *t)
     return x;
 }
 
+lval *lval_sexpr_eval(lval *v)
+{
+    for (int i = 0; i < v->count; i++)
+    {
+        v->cell[i] = lval_eval(v->cell[i]);
+    }
+
+    for (int i = 0; i < v->count; i++)
+    {
+        if (v->cell[i]->type == LVAL_ERR)
+        {
+            return lval_take(v, i);
+        }
+    }
+
+    /* Empty Expression */
+    if (v->count == 0)
+    {
+        return v;
+    }
+
+    /* Single Expression */
+    if (v->count == 1)
+    {
+        return lval_take(v, 0);
+    }
+
+    lval *f = lval_pop(v, 0);
+
+    if (f->type != LVAL_SYM)
+    {
+        lval_del(f);
+        lval_del(v);
+        return lval_err("S-expression Does not start with symbol!");
+    }
+
+    lval *result = builtin_op(v, f->sym);
+    lval_del(f);
+    return result;
+}
 
 
 // lval eval_op(lval x, char *op, lval y)
@@ -313,7 +353,7 @@ int main(int argc, char **argv)
         if (mpc_parse("<stdin>", input, Lispy, &r))
         {
 
-            lval* x = lval_read(r.output);
+            lval *x = lval_read(r.output);
             lval_println(x);
             lval_del(x);
             // lval result = eval(r.output);
