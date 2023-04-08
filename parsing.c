@@ -180,8 +180,10 @@ lval *lval_read(mpc_ast_t *t) {
 
     return x;
 }
-
+lval *builtin_op(lval *a, char *op);
 lval *lval_eval(lval *v);
+lval *lval_take(lval *v, int i);
+lval *lval_pop(lval *v, int i);
 
 lval *lval_sexpr_eval(lval *v) {
     for (int i = 0; i < v->count; i++) {
@@ -220,18 +222,9 @@ lval *lval_sexpr_eval(lval *v) {
 lval *lval_eval(lval *v) {
     /* Evaluate Sexpressions */
     if (v->type == LVAL_SEXPR) {
-        return lval_eval_sexpr(v);
+        return lval_sexpr_eval(v);
     }
     return v;
-}
-
-lval *lval_pop(lval *v, int i) {
-    lval *x = v->cell[i];
-
-    memmove(x->cell[i], x->cell[i + 1], sizeof(lval *) * v->count - i - 1);
-    v->count--;
-    v->cell = realloc(v->cell, sizeof(lval *) * v->count);
-    return x;
 }
 
 lval *lval_pop(lval *v, int i) {
@@ -242,7 +235,7 @@ lval *lval_pop(lval *v, int i) {
 
     lval *x = v->cell[i];
 
-    memmove(&x->cell[i], &x->cell[i + 1], sizeof(lval *) * v->count - i - 1);
+    memmove(&v->cell[i], &v->cell[i + 1], sizeof(lval *) * (v->count - i - 1));
     v->count--;
     v->cell = realloc(v->cell, sizeof(lval *) * v->count);
     return x;
@@ -296,68 +289,6 @@ lval *builtin_op(lval *a, char *op) {
     lval_del(a);
     return x;
 }
-// lval eval_op(lval x, char *op, lval y)
-// {
-//     if (x.type == LVAL_ERR)
-//     {
-//         return x;
-//     }
-//     if (y.type == LVAL_ERR)
-//     {
-//         return y;
-//     }
-//     if (strcmp(op, "+") == 0)
-//     {
-//         return lval_num(
-
-//             x.num + y.num);
-//     }
-//     if (strcmp(op, "-") == 0)
-//     {
-//         return lval_num(
-//             x.num - y.num);
-//     }
-//     if (strcmp(op, "*") == 0)
-//     {
-//         return lval_num(x.num * y.num);
-//     }
-//     if (strcmp(op, "/") == 0)
-//     {
-//         /* If second operand is zero return error */
-//         return y.num == 0
-//                    ? lval_err(LERR_DIV_ZERO)
-//                    : lval_num(x.num / y.num);
-//     }
-//     return lval_err(LERR_BAD_OP);
-// }
-
-// lval eval(mpc_ast_t *tree)
-// {
-//     // If it was a number
-
-//     if (strstr(tree->tag, "number"))
-//     {
-//         errno = 0;
-//         long x = strtol(tree->contents, NULL, 10);
-//         return errno != ERANGE ? lval_num(x) : lval_err(LERR_BAD_NUM);
-//     }
-
-//     // If not then it means its an operator
-
-//     char *op = tree->children[1]->contents;
-
-//     lval x = eval(tree->children[2]);
-
-//     int i = 3; // . first 2 have already been ignored
-
-//     while (strstr(tree->children[i]->tag, "expr"))
-//     {
-
-//         x = eval_op(x, op, eval(tree->children[i]));
-//         i++;
-//     }
-//     return x;
-// }
 
 int main(int argc, char **argv) {
     mpc_parser_t *Number = mpc_new("number");
@@ -376,20 +307,17 @@ int main(int argc, char **argv) {
               Number, Symbol, Sexpr, Expr, Lispy);
 
     puts("Lispy Version 0.0.0.3");
-    puts("Press CMD+C to exit\n");
+    puts("Press CTRL+C to exit\n");
     while (1) {
         mpc_result_t r;
 
         /* Output our prompt and get input */
         char *input = readline("lispy> ");
         if (mpc_parse("<stdin>", input, Lispy, &r)) {
-            lval *x = lval_read(r.output);
+            lval *x = lval_eval(lval_read(r.output));
             lval_println(x);
             lval_del(x);
-            // lval result = eval(r.output);
-            // lval_println(result);
-            // // printf("%li\n", result);
-            // mpc_ast_delete(r.output);
+
         } else {
             printf("erro");
             mpc_err_print(r.error);
