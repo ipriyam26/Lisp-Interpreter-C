@@ -310,6 +310,58 @@ lval *builtin_op(lval *a, char *op) {
     return x;
 }
 
+/*!
+A little helper to check if lval is valid
+*/
+lval *head_tail_helper(lval *a) {
+    if (a->count == 1) {
+        lval_del(a);
+        return lval_err("Function 'head' Too many arguments passed");
+    }
+    if (a->cell[0]->type != LVAL_QEXPR) {
+        lval_del(a);
+        return lval_err("Function 'head' passed incorrect types!");
+    }
+    if (a->cell[0]->count == 0) {
+        lval_del(a);
+        return lval_err("Function 'head' passed {}!");
+    }
+    return lval_num(1);
+}
+
+/*
+Takes a Q-Expression and returns a Q-Expression with only the first element
+ */
+lval *builtin_head(lval *a) {
+    lval *res = head_tail_helper(a);
+    if (res->type == LVAL_ERR) {
+        return res;
+    }
+    lval_del(res);
+
+    lval *v = lval_take(a, 0);
+
+    while (v->count > 1) {
+        lval_del(lval_pop(v, 1));
+    }
+    return v;
+}
+
+/*
+Takes a Q-Expression and returns a Q-Expression with the first element removed
+*/
+lval *builtin_tail(lval *a) {
+    lval *res = head_tail_helper(a);
+    if (res->type == LVAL_ERR) {
+        return res;
+    }
+    lval_del(res);
+
+    lval *v = lval_take(a, 0);
+    lval_del(lval_pop(v, 0));
+    return v;
+}
+
 int main(int argc, char **argv) {
     mpc_parser_t *Number = mpc_new("number");
     mpc_parser_t *Symbol = mpc_new("symbol");
@@ -320,12 +372,12 @@ int main(int argc, char **argv) {
     mpca_lang(MPCA_LANG_DEFAULT,
               "                                    \
     number   : /-?[0-9]+/ ;                           \
-    symbol : '+' | '-' | '*' | '/' ;                  \
-    sexpr   : '(' <expr>* ')' ;                       \
-    qexpr   : '{' <expr>* '}' ;                      \
+    symbol   :  \"list\" | \"head\" | \"tail\" | \"join\" | \"eval\" | '+' | '-' | '*' | '/' ;                  \
+    sexpr    : '(' <expr>* ')' ;                       \
+    qexpr    : '{' <expr>* '}' ;                      \
     expr     : <number> | <symbol> | <sexpr> | <qexpr> ;        \
     lispy    : /^/  <expr>* /$/ ;                     \
-  ",
+    ",
               Number, Symbol, Sexpr, Qexpr, Expr, Lispy);
 
     puts("Lispy Version 0.0.0.3");
