@@ -22,6 +22,12 @@ void add_history(char *unused) {}
 #include <editline/readline.h>
 #endif
 
+#define LASSERT(args, cond, err) \
+    if (!(cond)) {               \
+        lval_del(args);          \
+        return lval_err(err);    \
+    }
+
 static char input[2048];
 
 enum { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_SEXPR, LVAL_QEXPR };
@@ -267,6 +273,63 @@ lval *lval_take(lval *v, int i) {
     return x;
 }
 
+/*!
+A little helper to check if lval is valid
+*/
+lval *head_tail_helper(lval *a) {
+    LASSERT(a, a->count == 1, "Function 'head' passed too many arguments!");
+    LASSERT(a, a->cell[0]->type == LVAL_QEXPR,
+            "Function 'head' passed incorrect types!");
+    LASSERT(a, a->cell[0]->count != 0, "Function 'head' passed {}!");
+    return lval_num(1);
+}
+lval *builtin_list(lval *a) {
+    a->type = LVAL_QEXPR;
+    return a;
+}
+
+lval *builtin_eval(lval *a) {
+    LASSERT(a, a->count == 1, "Function 'eval' passed too many arguments!");
+    LASSERT(a, a->cell[0]->type == LVAL_QEXPR,
+            "Function 'eval' passed incorrect type!");
+
+    lval *x = lval_take(a, 0);
+    x->type = LVAL_SEXPR;
+    return lval_eval(x);
+}
+/*
+Takes a Q-Expression and returns a Q-Expression with only the first element
+ */
+lval *builtin_head(lval *a) {
+    lval *res = head_tail_helper(a);
+    if (res->type == LVAL_ERR) {
+        return res;
+    }
+    lval_del(res);
+
+    lval *v = lval_take(a, 0);
+
+    while (v->count > 1) {
+        lval_del(lval_pop(v, 1));
+    }
+    return v;
+}
+
+/*
+Takes a Q-Expression and returns a Q-Expression with the first element removed
+*/
+lval *builtin_tail(lval *a) {
+    lval *res = head_tail_helper(a);
+    if (res->type == LVAL_ERR) {
+        return res;
+    }
+    lval_del(res);
+
+    lval *v = lval_take(a, 0);
+    lval_del(lval_pop(v, 0));
+    return v;
+}
+
 lval *builtin_op(lval *a, char *op) {
     for (int i = 0; i < a->count; i++) {
         if (a->cell[i]->type != LVAL_NUM) {
@@ -308,58 +371,6 @@ lval *builtin_op(lval *a, char *op) {
     }
     lval_del(a);
     return x;
-}
-
-/*!
-A little helper to check if lval is valid
-*/
-lval *head_tail_helper(lval *a) {
-    if (a->count == 1) {
-        lval_del(a);
-        return lval_err("Function 'head' Too many arguments passed");
-    }
-    if (a->cell[0]->type != LVAL_QEXPR) {
-        lval_del(a);
-        return lval_err("Function 'head' passed incorrect types!");
-    }
-    if (a->cell[0]->count == 0) {
-        lval_del(a);
-        return lval_err("Function 'head' passed {}!");
-    }
-    return lval_num(1);
-}
-
-/*
-Takes a Q-Expression and returns a Q-Expression with only the first element
- */
-lval *builtin_head(lval *a) {
-    lval *res = head_tail_helper(a);
-    if (res->type == LVAL_ERR) {
-        return res;
-    }
-    lval_del(res);
-
-    lval *v = lval_take(a, 0);
-
-    while (v->count > 1) {
-        lval_del(lval_pop(v, 1));
-    }
-    return v;
-}
-
-/*
-Takes a Q-Expression and returns a Q-Expression with the first element removed
-*/
-lval *builtin_tail(lval *a) {
-    lval *res = head_tail_helper(a);
-    if (res->type == LVAL_ERR) {
-        return res;
-    }
-    lval_del(res);
-
-    lval *v = lval_take(a, 0);
-    lval_del(lval_pop(v, 0));
-    return v;
 }
 
 int main(int argc, char **argv) {
