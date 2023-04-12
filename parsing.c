@@ -29,26 +29,93 @@ void add_history(char *unused) {}
     }
 
 static char input[2048];
-
-enum { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_SEXPR, LVAL_QEXPR };
+struct lval;
+struct lenv;
+typedef struct lval lval;
+typedef struct lenv lenv;
+enum { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_FUNC, LVAL_SEXPR, LVAL_QEXPR };
+lval *lval_copy(lval *a);
+lval *lval_err(char *m);
+void lenv_del(lenv *e);
+typedef lval *(*lbuiltin)(lenv *, lval *);
 
 enum { LERR_DIV_ZERO, LERR_BAD_OP, LERR_BAD_NUM };
-typedef struct lval {
+
+struct lval {
     int type;
     long num;
 
     // Error and Symbol have string data
     char *error;
     char *sym;
+    lbuiltin func;
 
     // Count of pointers and a list of pointers to lval
     int count;
-    struct lval **cell;  // This is the pointer to the cell that holds the
-                         // pointers i.e it points to the list of pointers that
-                         // are pointing to the lval struct
-} lval;
+    lval **cell;  // This is the pointer to the cell that holds the
+                  // pointers i.e it points to the list of pointers that
+                  // are pointing to the lval struct
+};
+
+struct lenv {
+    int count;
+    char **syms;
+    lval **vals;
+};
 
 void lval_print(lval *v);
+
+lenv *lenv_new(void) {
+    lenv *e = malloc(sizeof(lenv));
+    e->count = 0;
+    e->syms = NULL;
+    e->vals = NULL;
+    return e;
+}
+
+lval *lenv_get(lenv *e, lval *a) {
+    for (int i = 0; i < e->count; i++) {
+        if (strcmp(e->syms[i], a->sym) == 0) {
+            return lval_copy(e->vals[i]);
+        }
+    }
+    return lval_err("symbol not found!");
+}
+
+void lenv_put(lenv *e, lval *k, lval *v) {
+    /* Iterate over all items in environment */
+    /* This is to see if variable already exists */
+    for (int i = 0; i < e->count; i++) {
+        /* If variable is found delete item at that position */
+        /* And replace with variable supplied by user */
+        if (strcmp(e->syms[i], k->sym) == 0) {
+            lval_del(e->vals[i]);
+            e->vals[i] = lval_copy(v);
+            return;
+        }
+    }
+
+    /* If no existing entry found allocate space for new entry */
+    e->count++;
+    e->vals = realloc(e->vals, sizeof(lval *) * e->count);
+    e->syms = realloc(e->syms, sizeof(char *) * e->count);
+
+    /* Copy contents of lval and symbol string into new location */
+    e->vals[e->count - 1] = lval_copy(v);
+    e->syms[e->count - 1] = malloc(strlen(k->sym) + 1);
+    strcpy(e->syms[e->count - 1], k->sym);
+}
+
+void lenv_del(lenv *e) {
+    for (int i = 0; i < e->count; i++) {
+        free(e->syms[i]);
+        lval_del(e->vals[i]);
+    }
+    free(e->syms);
+    free(e->vals);
+    free(e);
+}
+
 lval *lval_err(char *m) {
     lval *a = malloc(sizeof(lval));
     a->type = LVAL_ERR;
@@ -70,6 +137,13 @@ lval *lval_sym(char *s) {
     a->sym = malloc(strlen(s) + 1);
     strcpy(a->sym, s);
     return a;
+}
+
+lval *lval_func(lbuiltin func) {
+    lval *v = malloc(sizeof(lval));
+    v->type = LVAL_FUNC;
+    v->func = func;
+    return v;
 }
 
 lval *lval_sexpr(void) {
@@ -98,6 +172,9 @@ void lval_del(lval *v) {
         case LVAL_SYM:
             free(v->sym);
             break;
+        case LVAL_FUNC:
+            break;
+
         case LVAL_QEXPR:
         case LVAL_SEXPR:
             for (int i = 0; i < v->count; i++) {
@@ -149,7 +226,42 @@ void lval_print(lval *v) {
         case LVAL_QEXPR:
             lval_expr_print(v, '{', '}');
             break;
+        case LVAL_FUNC:
+            printf("<function>");
+            break;
     }
+}
+
+lval *lval_copy(lval *v) {
+    lval *x = malloc(sizeof(lval));
+    x->type = v->type;
+
+    switch (v->type) {
+        case LVAL_FUNC:
+            x->func = v->func;
+            break;
+        case LVAL_NUM:
+            x->num = v->num;
+            break;
+
+        case LVAL_ERR:
+            x->error = malloc(sizeof(v->error) + 1);
+            strcpy(x->error, v->error);
+            break;
+        case LVAL_SYM:
+            x->sym = malloc(sizeof(x->sym) + 1);
+            strcpy(x->sym, v->sym);
+            break;
+        case LVAL_SEXPR:
+        case LVAL_QEXPR:
+            x->count = v->count;
+            x->cell = malloc(sizeof(lval *) * x->count);
+            for (int i = 0; i < x->count; i++) {
+                x->cell[i] = lval_copy(v->cell[i]);
+            }
+            break;
+    }
+    return x;
 }
 
 /* Print an "lval" followed by a newline */
@@ -432,7 +544,7 @@ int main(int argc, char **argv) {
     mpca_lang(MPCA_LANG_DEFAULT,
               "                                    \
     number   : /-?[0-9]+/ ;                           \
-    symbol   :  \"list\" | \"head\" | \"tail\" | \"join\" | \"eval\" | '+' | '-' | '*' | '/' ;                  \
+    symbol   :  /[a-zA-Z0-9_+\\-*\\/\\\\=<>!&]+/ ;                  \
     sexpr    : '(' <expr>* ')' ;                       \
     qexpr    : '{' <expr>* '}' ;                      \
     expr     : <number> | <symbol> | <sexpr> | <qexpr> ;        \
