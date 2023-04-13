@@ -34,9 +34,18 @@ struct lenv;
 typedef struct lval lval;
 typedef struct lenv lenv;
 enum { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_FUNC, LVAL_SEXPR, LVAL_QEXPR };
+
+lval *lenv_get(lenv *env, lval *a);
+
 lval *lval_copy(lval *a);
 lval *lval_err(char *m);
 void lenv_del(lenv *e);
+lval *builtin_op(lenv *env, lval *a, char *op);
+lval *lval_eval(lenv *env, lval *v);
+lval *lval_take(lval *v, int i);
+lval *lval_pop(lval *v, int i);
+void lval_del(lval *v);
+void lval_print(lval *v);
 typedef lval *(*lbuiltin)(lenv *, lval *);
 
 enum { LERR_DIV_ZERO, LERR_BAD_OP, LERR_BAD_NUM };
@@ -56,65 +65,6 @@ struct lval {
                   // pointers i.e it points to the list of pointers that
                   // are pointing to the lval struct
 };
-
-struct lenv {
-    int count;
-    char **syms;
-    lval **vals;
-};
-
-void lval_print(lval *v);
-
-lenv *lenv_new(void) {
-    lenv *e = malloc(sizeof(lenv));
-    e->count = 0;
-    e->syms = NULL;
-    e->vals = NULL;
-    return e;
-}
-
-lval *lenv_get(lenv *e, lval *a) {
-    for (int i = 0; i < e->count; i++) {
-        if (strcmp(e->syms[i], a->sym) == 0) {
-            return lval_copy(e->vals[i]);
-        }
-    }
-    return lval_err("symbol not found!");
-}
-
-void lenv_put(lenv *e, lval *k, lval *v) {
-    /* Iterate over all items in environment */
-    /* This is to see if variable already exists */
-    for (int i = 0; i < e->count; i++) {
-        /* If variable is found delete item at that position */
-        /* And replace with variable supplied by user */
-        if (strcmp(e->syms[i], k->sym) == 0) {
-            lval_del(e->vals[i]);
-            e->vals[i] = lval_copy(v);
-            return;
-        }
-    }
-
-    /* If no existing entry found allocate space for new entry */
-    e->count++;
-    e->vals = realloc(e->vals, sizeof(lval *) * e->count);
-    e->syms = realloc(e->syms, sizeof(char *) * e->count);
-
-    /* Copy contents of lval and symbol string into new location */
-    e->vals[e->count - 1] = lval_copy(v);
-    e->syms[e->count - 1] = malloc(strlen(k->sym) + 1);
-    strcpy(e->syms[e->count - 1], k->sym);
-}
-
-void lenv_del(lenv *e) {
-    for (int i = 0; i < e->count; i++) {
-        free(e->syms[i]);
-        lval_del(e->vals[i]);
-    }
-    free(e->syms);
-    free(e->vals);
-    free(e);
-}
 
 lval *lval_err(char *m) {
     lval *a = malloc(sizeof(lval));
@@ -166,13 +116,13 @@ void lval_del(lval *v) {
     switch (v->type) {
         case LVAL_NUM:
             break;
+        case LVAL_FUNC:
+            break;
         case LVAL_ERR:
             free(v->error);
             break;
         case LVAL_SYM:
             free(v->sym);
-            break;
-        case LVAL_FUNC:
             break;
 
         case LVAL_QEXPR:
@@ -191,6 +141,37 @@ lval *lval_add(lval *v, lval *x) {
     v->cell = realloc(v->cell, sizeof(lval *) * v->count);
     v->cell[v->count - 1] = x;
     return v;
+}
+
+lval *lval_join(lval *x, lval *y) {
+    /* For each cell in 'y' add it to 'x' */
+    for (int i = 0; i < y->count; i++) {
+        x = lval_add(x, y->cell[i]);
+    }
+    free(y->cell);
+    free(y);
+
+    return x;
+}
+
+lval *lval_pop(lval *v, int i) {
+    // NOTE - Using the second lval_pop without '&' in memmove will result in a
+    // segmentation fault or undefined behavior as it is trying to move a
+    // pointer without referencing the address of the pointer. The '&' operator
+    // is needed to pass the address of the pointer to the memmove function.
+
+    lval *x = v->cell[i];
+
+    memmove(&v->cell[i], &v->cell[i + 1], sizeof(lval *) * (v->count - i - 1));
+    v->count--;
+    v->cell = realloc(v->cell, sizeof(lval *) * v->count);
+    return x;
+}
+
+lval *lval_take(lval *v, int i) {
+    lval *x = lval_pop(v, i);
+    lval_del(v);
+    return x;
 }
 
 void lval_expr_print(lval *v, char open, char close) {
@@ -318,15 +299,10 @@ lval *lval_read(mpc_ast_t *t) {
 
     return x;
 }
-lval *builtin_op(lval *a, char *op);
-lval *builtin(lval *a, char *func);
-lval *lval_eval(lval *v);
-lval *lval_take(lval *v, int i);
-lval *lval_pop(lval *v, int i);
 
-lval *lval_sexpr_eval(lval *v) {
+lval *lval_sexpr_eval(lenv *env, lval *v) {
     for (int i = 0; i < v->count; i++) {
-        v->cell[i] = lval_eval(v->cell[i]);
+        v->cell[i] = lval_eval(env, v->cell[i]);
     }
 
     for (int i = 0; i < v->count; i++) {
@@ -347,43 +323,85 @@ lval *lval_sexpr_eval(lval *v) {
 
     lval *f = lval_pop(v, 0);
 
-    if (f->type != LVAL_SYM) {
+    if (f->type != LVAL_FUNC) {
         lval_del(f);
         lval_del(v);
-        return lval_err("S-expression Does not start with symbol!");
+        return lval_err("First element is not a function!");
     }
 
-    lval *result = builtin(v, f->sym);
+    lval *result = f->func(env, v);
     lval_del(f);
     return result;
 }
 
-lval *lval_eval(lval *v) {
+lval *lval_eval(lenv *env, lval *v) {
+    if (v->type == LVAL_SYM) {
+        lval *x = lenv_get(env, v);
+        lval_del(x);
+        return x;
+    }
     /* Evaluate Sexpressions */
     if (v->type == LVAL_SEXPR) {
-        return lval_sexpr_eval(v);
+        return lval_sexpr_eval(env, v);
     }
     return v;
 }
 
-lval *lval_pop(lval *v, int i) {
-    // NOTE - Using the second lval_pop without '&' in memmove will result in a
-    // segmentation fault or undefined behavior as it is trying to move a
-    // pointer without referencing the address of the pointer. The '&' operator
-    // is needed to pass the address of the pointer to the memmove function.
+struct lenv {
+    int count;
+    char **syms;
+    lval **vals;
+};
 
-    lval *x = v->cell[i];
-
-    memmove(&v->cell[i], &v->cell[i + 1], sizeof(lval *) * (v->count - i - 1));
-    v->count--;
-    v->cell = realloc(v->cell, sizeof(lval *) * v->count);
-    return x;
+lenv *lenv_new(void) {
+    lenv *env = malloc(sizeof(lenv));
+    env->count = 0;
+    env->syms = NULL;
+    env->vals = NULL;
+    return env;
 }
 
-lval *lval_take(lval *v, int i) {
-    lval *x = lval_pop(v, i);
-    lval_del(v);
-    return x;
+lval *lenv_get(lenv *env, lval *a) {
+    for (int i = 0; i < env->count; i++) {
+        if (strcmp(env->syms[i], a->sym) == 0) {
+            return lval_copy(env->vals[i]);
+        }
+    }
+    return lval_err("symbol not found!");
+}
+
+void lenv_put(lenv *env, lval *k, lval *v) {
+    /* Iterate over all items in environment */
+    /* This is to see if variable already exists */
+    for (int i = 0; i < env->count; i++) {
+        /* If variable is found delete item at that position */
+        /* And replace with variable supplied by user */
+        if (strcmp(env->syms[i], k->sym) == 0) {
+            lval_del(env->vals[i]);
+            env->vals[i] = lval_copy(v);
+            return;
+        }
+    }
+
+    /* If no existing entry found allocate space for new entry */
+    env->count++;
+    env->vals = realloc(env->vals, sizeof(lval *) * env->count);
+    env->syms = realloc(env->syms, sizeof(char *) * env->count);
+
+    /* Copy contents of lval and symbol string into new location */
+    env->vals[env->count - 1] = lval_copy(v);
+    env->syms[env->count - 1] = malloc(strlen(k->sym) + 1);
+    strcpy(env->syms[env->count - 1], k->sym);
+}
+
+void lenv_del(lenv *env) {
+    for (int i = 0; i < env->count; i++) {
+        free(env->syms[i]);
+        lval_del(env->vals[i]);
+    }
+    free(env->syms);
+    free(env->vals);
+    free(env);
 }
 
 /*!
@@ -396,24 +414,24 @@ lval *head_tail_helper(lval *a) {
     LASSERT(a, a->cell[0]->count != 0, "Function 'head' passed {}!");
     return lval_num(1);
 }
-lval *builtin_list(lval *a) {
+lval *builtin_list(lenv *env, lval *a) {
     a->type = LVAL_QEXPR;
     return a;
 }
 
-lval *builtin_eval(lval *a) {
+lval *builtin_eval(lenv *env, lval *a) {
     LASSERT(a, a->count == 1, "Function 'eval' passed too many arguments!");
     LASSERT(a, a->cell[0]->type == LVAL_QEXPR,
             "Function 'eval' passed incorrect type!");
 
     lval *x = lval_take(a, 0);
     x->type = LVAL_SEXPR;
-    return lval_eval(x);
+    return lval_eval(env, a);
 }
 /*
 Takes a Q-Expression and returns a Q-Expression with only the first element
  */
-lval *builtin_head(lval *a) {
+lval *builtin_head(lenv *env, lval *a) {
     lval *res = head_tail_helper(a);
     if (res->type == LVAL_ERR) {
         return res;
@@ -431,7 +449,7 @@ lval *builtin_head(lval *a) {
 /*
 Takes a Q-Expression and returns a Q-Expression with the first element removed
 */
-lval *builtin_tail(lval *a) {
+lval *builtin_tail(lenv *env, lval *a) {
     lval *res = head_tail_helper(a);
     if (res->type == LVAL_ERR) {
         return res;
@@ -443,18 +461,7 @@ lval *builtin_tail(lval *a) {
     return v;
 }
 
-lval *lval_join(lval *x, lval *y) {
-    /* For each cell in 'y' add it to 'x' */
-    while (y->count) {
-        x = lval_add(x, lval_pop(y, 0));
-    }
-
-    /* Delete the empty 'y' and return 'x' */
-    lval_del(y);
-    return x;
-}
-
-lval *builtin_join(lval *a) {
+lval *builtin_join(lenv *env, lval *a) {
     for (int i = 0; i < a->count; i++) {
         LASSERT(a, a->cell[i]->type == LVAL_QEXPR,
                 "Function 'join' passed incorrect type");
@@ -468,12 +475,14 @@ lval *builtin_join(lval *a) {
     return x;
 }
 
-lval *builtin_op(lval *a, char *op) {
+lval *builtin_op(lenv *env, lval *a, char *op) {
     for (int i = 0; i < a->count; i++) {
-        if (a->cell[i]->type != LVAL_NUM) {
-            lval_del(a);
-            return lval_err("Cannot operate on non-number!");
-        }
+        LASSERT(a, a->cell[i]->type == LVAL_NUM,
+                "Cannot operate on non-number!");
+        // if (a->cell[i]->type != LVAL_NUM) {
+        //     // lval_del(a);
+        //     return lval_err("Cannot operate on non-number!");
+        // }
     }
 
     lval *x = lval_pop(a, 0);
@@ -510,28 +519,35 @@ lval *builtin_op(lval *a, char *op) {
     lval_del(a);
     return x;
 }
+lval *builtin_add(lenv *env, lval *a) { return builtin_op(env, a, "+"); }
 
-lval *builtin(lval *a, char *func) {
-    if (strcmp("list", func) == 0) {
-        return builtin_list(a);
-    }
-    if (strcmp("head", func) == 0) {
-        return builtin_head(a);
-    }
-    if (strcmp("tail", func) == 0) {
-        return builtin_tail(a);
-    }
-    if (strcmp("join", func) == 0) {
-        return builtin_join(a);
-    }
-    if (strcmp("eval", func) == 0) {
-        return builtin_eval(a);
-    }
-    if (strstr("+-/*", func)) {
-        return builtin_op(a, func);
-    }
-    lval_del(a);
-    return lval_err("Unknown Function!");
+lval *builtin_sub(lenv *env, lval *a) { return builtin_op(env, a, "-"); }
+
+lval *builtin_mul(lenv *env, lval *a) { return builtin_op(env, a, "*"); }
+
+lval *builtin_div(lenv *env, lval *a) { return builtin_op(env, a, "/"); }
+
+void lenv_add_builtin(lenv *env, char *name, lbuiltin func) {
+    lval *k = lval_sym(name);
+    lval *v = lval_func(func);
+    lenv_put(env, k, v);
+    lval_del(k);
+    lval_del(v);
+}
+
+void lenv_add_builtins(lenv *env) {
+    /* List Functions */
+    lenv_add_builtin(env, "head", builtin_head);
+    lenv_add_builtin(env, "list", builtin_list);
+    lenv_add_builtin(env, "tail", builtin_tail);
+    lenv_add_builtin(env, "eval", builtin_eval);
+    lenv_add_builtin(env, "join", builtin_join);
+
+    /* Mathematical Functions */
+    lenv_add_builtin(env, "+", builtin_add);
+    lenv_add_builtin(env, "-", builtin_sub);
+    lenv_add_builtin(env, "*", builtin_mul);
+    lenv_add_builtin(env, "/", builtin_div);
 }
 
 int main(int argc, char **argv) {
@@ -554,18 +570,21 @@ int main(int argc, char **argv) {
 
     puts("Lispy Version 0.0.0.3");
     puts("Press CTRL+C to exit\n");
+    lenv *env = lenv_new();
+    lenv_add_builtins(env);
     while (1) {
+        char *input = readline("lispy> ");
+
         mpc_result_t r;
 
         /* Output our prompt and get input */
-        char *input = readline("lispy> ");
         if (mpc_parse("<stdin>", input, Lispy, &r)) {
-            lval *x = lval_eval(lval_read(r.output));
+            lval *x = lval_eval(env, lval_read(r.output));
             lval_println(x);
             lval_del(x);
+            mpc_ast_delete(r.output);
 
         } else {
-            printf("erro");
             mpc_err_print(r.error);
             mpc_err_delete(r.error);
         }
@@ -574,6 +593,7 @@ int main(int argc, char **argv) {
         add_history(input);
         free(input);
     }
+    lenv_del(env);
     mpc_cleanup(6, Number, Symbol, Qexpr, Sexpr, Expr, Lispy);
 
     return 0;
