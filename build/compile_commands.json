@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/home/vscode/lisp/build",
+  "command": "/usr/bin/cc  -Wall -g -std=gnu99 -o CMakeFiles/parsing.dir/parsing.c.o -c /home/vscode/lisp/parsing.c",
+  "file": "/home/vscode/lisp/parsing.c"
+},
+{
+  "directory": "/home/vscode/lisp/build",
+  "command": "/usr/bin/cc  -Wall -g -std=gnu99 -o CMakeFiles/parsing.dir/mpc.c.o -c /home/vscode/lisp/mpc.c",
+  "file": "/home/vscode/lisp/mpc.c"
+}
+]

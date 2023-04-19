@@ -1,0 +1,6 @@
+# ninja log v5
+0	103	1681906100217580002	CMakeFiles/parsing.dir/parsing.c.o	c7bede1b3ae8fa9b
+321	352	1681906100468580002	parsing	5ac00bb3744729b3
+1	321	1681906100434580002	CMakeFiles/parsing.dir/mpc.c.o	c7db2b18138200a1
+0	145	1681906402923209003	CMakeFiles/parsing.dir/parsing.c.o	c7bede1b3ae8fa9b
+145	176	1681906402957209003	parsing	5ac00bb3744729b3

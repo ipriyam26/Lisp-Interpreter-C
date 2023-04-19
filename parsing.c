@@ -337,7 +337,7 @@ lval *lval_sexpr_eval(lenv *env, lval *v) {
 lval *lval_eval(lenv *env, lval *v) {
     if (v->type == LVAL_SYM) {
         lval *x = lenv_get(env, v);
-        lval_del(x);
+        lval_del(v);
         return x;
     }
     /* Evaluate Sexpressions */
@@ -426,7 +426,7 @@ lval *builtin_eval(lenv *env, lval *a) {
 
     lval *x = lval_take(a, 0);
     x->type = LVAL_SEXPR;
-    return lval_eval(env, a);
+    return lval_eval(env, x);
 }
 /*
 Takes a Q-Expression and returns a Q-Expression with only the first element

@@ -1,0 +1,42 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/vscode/lisp/mpc.c
+mpc.h
+/home/vscode/lisp/mpc.h
+
+/home/vscode/lisp/mpc.h
+stdlib.h
+-
+stdio.h
+-
+stdarg.h
+-
+string.h
+-
+math.h
+-
+errno.h
+-
+ctype.h
+-
+
+/home/vscode/lisp/parsing.c
+stdio.h
+-
+stdlib.h
+-
+mpc.h
+/home/vscode/lisp/mpc.h
+string.h
+-
+editline/history.h
+-
+editline/readline.h
+-
+
